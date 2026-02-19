@@ -20,9 +20,9 @@ const envPath = path.resolve(__dirname, '../.env');
 if (fs.existsSync(envPath)) {
     const envFile = fs.readFileSync(envPath, 'utf8');
     envFile.split('\n').forEach(line => {
-        const [key, ...value] = line.split('=');
-        if (key && value) {
-            process.env[key.trim()] = value.join('=').trim();
+        const [key, ...valueParts] = line.split('=');
+        if (key && valueParts.length > 0) {
+            process.env[key.trim()] = valueParts.join('=').trim().replace(/^["']|["']$/g, '');
         }
     });
 }
@@ -40,7 +40,16 @@ const IMMIGRATION_KEYWORDS = [
     'immigration', 'immigrant', 'visa', 'asylum', 'refugee',
     'deportation', 'removal', 'naturalization', 'citizenship',
     'DACA', 'TPS', 'parole', 'inadmissibility', 'green card',
-    'alien', 'noncitizen', 'border', 'USCIS', 'ICE',
+    'alien', 'noncitizen', 'border', 'USCIS', 'ICE', 'CBP', 'EOIR',
+    'I-94', 'I-130', 'I-485', 'I-765', 'H-1B', 'L-1', 'O-1', 'F-1',
+    'SIJS', 'VAWA', 'INA', 'Adjudication', 'Entry', 'Bond',
+];
+
+const EXCLUDE_KEYWORDS = [
+    'pilotage', 'maritime', 'vessel', 'boat', 'navigation', 'bridge',
+    'lighthouse', 'cybersecurity', 'tsa', 'aviation', 'airport',
+    'fema', 'disaster', 'flood', 'radio', 'spectrum', 'telecommunications',
+    'dredging', 'waterway', 'oil spill', 'pollution',
 ];
 
 const DOCUMENT_TYPES = ['presidential_document', 'rule', 'proposed_rule', 'notice'];
@@ -55,22 +64,21 @@ const TYPE_LABELS = {
 const DRY_RUN = process.argv.includes('--dry-run');
 
 // ─── Supabase Client ────────────────────────────────────────
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+const supabaseUrl = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.EXPO_PUBLIC_GEMINI_API_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
-    console.error('❌ Missing SUPABASE_URL or SUPABASE_SERVICE_KEY');
+    console.error('❌ Missing SUPABASE_URL or SUPABASE_SERVICE_KEY (or EXPO_PUBLIC_* fallbacks)');
     process.exit(1);
 }
-
 const supabase = createClient(supabaseUrl, supabaseKey);
-
-// ─── Gemini Translation ─────────────────────────────────────
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
-async function translateToSpanish(text, retries = 2) {
-    if (!GEMINI_API_KEY || !text) return '';
+const SLEEP_BETWEEN_CALLS = 15000; // 15s to be safe on free tier
+
+async function callGemini(prompt, retries = 3) {
+    if (!GEMINI_API_KEY) return null;
 
     for (let i = 0; i <= retries; i++) {
         try {
@@ -78,86 +86,80 @@ async function translateToSpanish(text, retries = 2) {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    contents: [{
-                        parts: [{
-                            text: `Translate the following US immigration legal text to Spanish. 
-Keep legal terminology accurate. Return ONLY the translation, nothing else.
-
-Text: ${text}`
-                        }]
-                    }],
+                    contents: [{ parts: [{ text: prompt }] }],
                     generationConfig: {
                         temperature: 0.1,
-                        maxOutputTokens: 2000,
+                        maxOutputTokens: 2500,
+                        responseMimeType: 'application/json',
                     },
                 }),
             });
 
             if (response.status === 429) {
-                const wait = (i + 1) * 10000; // Increased to 10s as per user request
+                const wait = (i + 1) * 20000; // Exponential: 20s, 40s, 60s
                 console.warn(`⚠️ Gemini rate limit (429). Waiting ${wait / 1000}s... (Attempt ${i + 1}/${retries + 1})`);
                 await new Promise(r => setTimeout(r, wait));
                 continue;
             }
 
             if (!response.ok) {
-                console.warn('⚠️ Gemini translation failed:', response.status);
-                return '';
+                console.warn(`⚠️ Gemini call failed (${response.status})`);
+                return null;
             }
 
             const data = await response.json();
-            return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+            return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
         } catch (error) {
-            console.warn('⚠️ Translation error:', error.message);
+            console.warn('⚠️ Gemini error:', error.message);
             if (i < retries) {
-                await new Promise(r => setTimeout(r, 5000));
+                await new Promise(r => setTimeout(r, 10000));
                 continue;
             }
-            return '';
         }
     }
-    return '';
+    return null;
 }
 
 /**
- * Uses Gemini to identify if a document matches an existing law topic.
- * @param {object} doc - Federal Register document
- * @param {Array} laws - List of existing law titles and IDs
+ * Combines law matching and translation into a single Gemini call.
  */
-async function identifyMatchingLaw(doc, laws) {
-    if (!GEMINI_API_KEY || laws.length === 0) return null;
+async function processDocumentWithAI(doc, laws) {
+    if (!GEMINI_API_KEY) {
+        return { matchedLawId: 'NONE', titleEs: doc.title, abstractEs: doc.abstract };
+    }
 
     const lawsListString = laws.map(l => `- ID: ${l.id}, Title: ${l.title}`).join('\n');
-    const prompt = `You are a legal assistant for TuLey-USA.
-We have a new US government legal update and a list of existing law topics in our app.
-Does this update provide a significant amendment, change, or directly relevant news for any of the existing laws?
+
+    const prompt = `You are a legal assistant for TuLey-USA. 
+Process this US immigration update and return a JSON object.
 
 Update Title: ${doc.title}
 Update Abstract: ${doc.abstract || doc.title}
 
-Existing Topics:
-${lawsListString}
+Tasks:
+1. matchedLawId: Does this update provide a significant amendment to any of these existing laws? 
+   Existing Topics:
+   ${lawsListString}
+   Return the Law ID if it's a CLEAR MATCH, otherwise "NONE".
 
-If it is a CLEAR MATCH for an existing topic, return ONLY the Law ID.
-If it is NOT a clear match for any of the specific topics (e.g. it is general news, a different agency, or a topic not listed), return "NONE".
-Return ONLY the ID or "NONE".`;
+2. titleEs: Translate the document title to Spanish accurately for a legal mobile app.
+3. abstractEs: Translate the document abstract to Spanish.
+
+Return ONLY a JSON object:
+{
+  "matchedLawId": "ID or NONE",
+  "titleEs": "Spanish Title",
+  "abstractEs": "Spanish Abstract"
+}`;
+
+    const result = await callGemini(prompt);
+    if (!result) return null;
 
     try {
-        const response = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: 0 },
-            }),
-        });
-
-        if (!response.ok) return null;
-        const data = await response.json();
-        const result = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'NONE';
-
-        return result === 'NONE' ? null : result;
+        const jsonStr = result.replace(/```json|```/g, '').trim();
+        return JSON.parse(jsonStr);
     } catch (e) {
+        console.warn('⚠️ Failed to parse Gemini JSON:', e.message);
         return null;
     }
 }
@@ -179,13 +181,15 @@ async function fetchFederalRegisterDocs(daysBack = 7) {
 
     // Improved Regex-based keyword matching to avoid false positives (like 'ice' in 'notice')
     const regexSource = IMMIGRATION_KEYWORDS.map(kw => {
-        // Use word boundaries for short acronyms or problematic words
         if (kw.length <= 5 || kw === 'border' || kw === 'alien') {
             return `\\b${kw}\\b`;
         }
         return kw;
     }).join('|');
     const relevanceRegex = new RegExp(regexSource, 'i');
+
+    // Exclusion Regex
+    const excludeRegex = new RegExp(EXCLUDE_KEYWORDS.join('|'), 'i');
 
     for (const agency of IMMIGRATION_AGENCIES) {
         try {
@@ -213,8 +217,9 @@ async function fetchFederalRegisterDocs(daysBack = 7) {
 
             // Filter for immigration relevance using Regex
             const relevant = results.filter(doc => {
-                const text = `${doc.title} ${doc.abstract || ''} ${doc.action || ''}`;
-                return relevanceRegex.test(text);
+                const text = `${doc.title} ${doc.abstract || ''} ${doc.action || ''}`.toLowerCase();
+                // Must match immigration AND NOT match excluded topics
+                return relevanceRegex.test(text) && !excludeRegex.test(text);
             });
 
             if (relevant.length > 0) {
@@ -300,9 +305,19 @@ async function processAndUpload(docs) {
             continue;
         }
 
-        // --- SMART MERGE LOGIC ---
-        console.log(`  🧠 Checking for matching law topic...`);
-        const matchedLawId = await identifyMatchingLaw(doc, consolidatedLaws);
+        // --- COMBINED AI CALL (Match + Translate) ---
+        console.log(`  🧠 AI: Matching & Translating...`);
+        const aiResult = await processDocumentWithAI(doc, consolidatedLaws);
+
+        if (!aiResult || !aiResult.titleEs) {
+            console.warn(`  ⚠️ AI processing failed for ${docId}. Skipping to avoid poor content.`);
+            continue;
+        }
+
+        const matchedLawId = aiResult.matchedLawId !== 'NONE' ? aiResult.matchedLawId : null;
+        const titleEs = aiResult.titleEs;
+        const abstractEs = aiResult.abstractEs;
+
         let targetLawId = docId;
         let isAmendment = false;
 
@@ -312,18 +327,9 @@ async function processAndUpload(docs) {
             isAmendment = true;
         }
 
-        // Translate title and abstract
-        console.log(`  🌐 Translating with Gemini...`);
-        let titleEs = await translateToSpanish(title);
-        let abstractEs = await translateToSpanish(abstract);
-
-        if (!titleEs) {
-            console.warn(`  ⚠️ Could not translate title for ${docId}. Skipping.`);
-            continue;
-        }
-
-        // Wait between Gemini calls to respect the ~10s response time and rate limits
-        await new Promise(r => setTimeout(r, 2000));
+        // Wait between documents to respect the global rate limit (15s)
+        console.log(`  ⏳ Waiting ${SLEEP_BETWEEN_CALLS / 1000}s for Gemini quota...`);
+        await new Promise(r => setTimeout(r, SLEEP_BETWEEN_CALLS));
 
         if (!isAmendment) {
             // Insert as a new law in 'updates' category
