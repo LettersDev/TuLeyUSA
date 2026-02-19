@@ -12,9 +12,9 @@ const FEDERAL_REGISTER_API = 'https://www.federalregister.gov/api/v1';
 
 const IMMIGRATION_AGENCIES = [
     'homeland-security-department',
-    'citizenship-and-immigration-services',
-    'immigration-and-customs-enforcement',
-    'customs-and-border-protection',
+    'us-citizenship-and-immigration-services',
+    'us-immigration-and-customs-enforcement',
+    'us-customs-and-border-protection',
     'executive-office-for-immigration-review',
     'state-department',
 ];
@@ -52,40 +52,54 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
-async function translateToSpanish(text) {
+async function translateToSpanish(text, retries = 2) {
     if (!GEMINI_API_KEY || !text) return '';
 
-    try {
-        const response = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [{
-                        text: `Translate the following US immigration legal text to Spanish. 
+    for (let i = 0; i <= retries; i++) {
+        try {
+            const response = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [{
+                            text: `Translate the following US immigration legal text to Spanish. 
 Keep legal terminology accurate. Return ONLY the translation, nothing else.
 
 Text: ${text}`
-                    }]
-                }],
-                generationConfig: {
-                    temperature: 0.1,
-                    maxOutputTokens: 2000,
-                },
-            }),
-        });
+                        }]
+                    }],
+                    generationConfig: {
+                        temperature: 0.1,
+                        maxOutputTokens: 2000,
+                    },
+                }),
+            });
 
-        if (!response.ok) {
-            console.warn('⚠️ Gemini translation failed:', response.status);
+            if (response.status === 429) {
+                const wait = (i + 1) * 5000;
+                console.warn(`⚠️ Gemini rate limit (429). Waiting ${wait / 1000}s... (Attempt ${i + 1}/${retries + 1})`);
+                await new Promise(r => setTimeout(r, wait));
+                continue;
+            }
+
+            if (!response.ok) {
+                console.warn('⚠️ Gemini translation failed:', response.status);
+                return '';
+            }
+
+            const data = await response.json();
+            return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+        } catch (error) {
+            console.warn('⚠️ Translation error:', error.message);
+            if (i < retries) {
+                await new Promise(r => setTimeout(r, 2000));
+                continue;
+            }
             return '';
         }
-
-        const data = await response.json();
-        return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-    } catch (error) {
-        console.warn('⚠️ Translation error:', error.message);
-        return '';
     }
+    return '';
 }
 
 // ─── Federal Register API ───────────────────────────────────
