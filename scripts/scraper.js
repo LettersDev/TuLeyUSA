@@ -111,11 +111,11 @@ async function fetchFederalRegisterDocs(daysBack = 7) {
                 'conditions[publication_date][lte]': endDate,
                 'per_page': '20',
                 'order': 'newest',
-                'fields[]': [
-                    'title', 'abstract', 'document_number', 'type',
-                    'publication_date', 'html_url', 'agencies', 'action'
-                ].join(','),
             });
+
+            // Append each field individually as the API expects fields[]=... multiple times
+            const fields = ['title', 'abstract', 'document_number', 'type', 'publication_date', 'html_url', 'agencies', 'action'];
+            fields.forEach(f => params.append('fields[]', f));
 
             const url = `${FEDERAL_REGISTER_API}/documents.json?${params}`;
             const response = await fetch(url);
