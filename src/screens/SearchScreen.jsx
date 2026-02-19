@@ -49,15 +49,14 @@ export default function SearchScreen({ navigation }) {
     };
 
     const handleGlobalSearch = async () => {
-        if (query.length < 3) return;
-        Keyboard.dismiss();
-        setLoading(true);
-        setSearchMode('global');
+        if (!query.trim() || loading) return; // Assuming 'query' is the search input and 'loading' is the global loading state
+        setLoading(true); // Using existing 'setLoading' for global search
         try {
-            const globalResults = await searchLawsGlobal(query);
-            setResults(globalResults || []);
-        } catch {
-            setResults([]);
+            const globalResults = await searchLawsGlobal(query, language); // Pass language
+            setResults(globalResults || []); // Using existing 'setResults' for global results
+        } catch (error) {
+            console.error('Search error:', error); // Added error logging
+            setResults([]); // Clear results on error
         } finally {
             setLoading(false);
         }

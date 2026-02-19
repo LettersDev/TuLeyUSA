@@ -3,6 +3,7 @@
 // Global state: favorites, history, language, notifications
 // ============================================================
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import FavoritesService from '../services/FavoritesService';
 import HistoryService from '../services/HistoryService';
 import { loadLanguage, setLanguage as setLang, getLanguage } from '../utils/i18n';

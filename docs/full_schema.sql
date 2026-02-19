@@ -1,8 +1,14 @@
 -- ============================================================
 -- full_schema.sql — MigraGuide USA
 -- COMPLETE DATABASE RESTORATION SCRIPT
--- RUN THIS FIRST in the Supabase SQL Editor
+-- WARNING: This script drops and recreates tables!
 -- ============================================================
+
+-- 0. CLEANUP (Uncomment if you want a complete reset)
+-- DROP FUNCTION IF EXISTS search_laws(text, text);
+-- DROP TABLE IF EXISTS law_items;
+-- DROP TABLE IF EXISTS laws;
+-- DROP TABLE IF EXISTS system_metadata;
 
 -- 1. System Metadata Table
 CREATE TABLE IF NOT EXISTS system_metadata (
@@ -39,16 +45,21 @@ CREATE TABLE IF NOT EXISTS law_items (
   title_es TEXT,
   text TEXT NOT NULL,
   text_es TEXT,
-  search_vector TSVECTOR GENERATED ALWAYS AS (
+  search_vector_en TSVECTOR GENERATED ALWAYS AS (
     to_tsvector('english', coalesce(title, '') || ' ' || text)
+  ) STORED,
+  search_vector_es TSVECTOR GENERATED ALWAYS AS (
+    to_tsvector('spanish', coalesce(title_es, '') || ' ' || coalesce(text_es, ''))
   ) STORED
 );
 
--- GIN Index for efficiency
-CREATE INDEX IF NOT EXISTS law_items_search_idx ON law_items USING GIN(search_vector);
+-- GIN Indexes for efficiency
+CREATE INDEX IF NOT EXISTS law_items_search_en_idx ON law_items USING GIN(search_vector_en);
+CREATE INDEX IF NOT EXISTS law_items_search_es_idx ON law_items USING GIN(search_vector_es);
 
 -- 4. BILINGUAL Search Function
-CREATE OR REPLACE FUNCTION search_laws(query TEXT, lang TEXT DEFAULT 'english')
+DROP FUNCTION IF EXISTS search_laws(text, text);
+CREATE OR REPLACE FUNCTION search_laws(query TEXT, lang_param TEXT DEFAULT 'english')
 RETURNS TABLE(
   law_id TEXT,
   law_title TEXT,
@@ -57,19 +68,28 @@ RETURNS TABLE(
   item_text TEXT,
   rank REAL
 )
-LANGUAGE sql AS $$
+LANGUAGE plpgsql AS $$
+BEGIN
+  RETURN QUERY
   SELECT
     li.law_id,
-    COALESCE(CASE WHEN lang = 'spanish' THEN l.title_es ELSE l.title END, l.title) AS law_title,
+    COALESCE(CASE WHEN lang_param = 'spanish' THEN l.title_es ELSE l.title END, l.title) AS law_title,
     li.id AS item_id,
-    COALESCE(CASE WHEN lang = 'spanish' THEN li.title_es ELSE li.title END, li.title) AS item_title,
-    COALESCE(CASE WHEN lang = 'spanish' THEN li.text_es ELSE li.text END, li.text) AS item_text,
-    ts_rank(li.search_vector, plainto_tsquery('english', query)) AS rank
+    COALESCE(CASE WHEN lang_param = 'spanish' THEN li.title_es ELSE li.title END, li.title) AS item_title,
+    COALESCE(CASE WHEN lang_param = 'spanish' THEN li.text_es ELSE li.text END, li.text) AS item_text,
+    ts_rank(
+      CASE WHEN lang_param = 'spanish' THEN li.search_vector_es ELSE li.search_vector_en END,
+      websearch_to_tsquery(CASE WHEN lang_param = 'spanish' THEN 'spanish' ELSE 'english' END, query)
+    ) AS rank
   FROM law_items li
   JOIN laws l ON l.id = li.law_id
-  WHERE li.search_vector @@ plainto_tsquery('english', query)
+  WHERE (
+    CASE WHEN lang_param = 'spanish' THEN li.search_vector_es @@ websearch_to_tsquery('spanish', query)
+    ELSE li.search_vector_en @@ websearch_to_tsquery('english', query) END
+  )
   ORDER BY rank DESC
   LIMIT 30;
+END;
 $$;
 
 -- 5. Helper Function for Smart Updates (Increments article count)

@@ -112,9 +112,12 @@ export const downloadLawContent = async (lawId) => {
 /**
  * Búsqueda global de artículos — Full Text Search en Supabase (PostgreSQL)
  */
-export const searchLawsGlobal = async (query) => {
+export const searchLawsGlobal = async (query, lang = 'english') => {
     try {
-        const { data, error } = await supabase.rpc('search_laws', { query });
+        const { data, error } = await supabase.rpc('search_laws', {
+            query,
+            lang_param: lang === 'es' ? 'spanish' : 'english',
+        });
         if (error) throw error;
         return data || [];
     } catch (error) {

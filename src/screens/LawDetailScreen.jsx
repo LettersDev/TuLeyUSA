@@ -124,6 +124,28 @@ export default function LawDetailScreen({ navigation, route }) {
         setFav(result);
     };
 
+    const handleDeleteDownload = async () => {
+        Alert.alert(
+            language === 'es' ? 'Eliminar descarga' : 'Delete Download',
+            language === 'es'
+                ? '¿Estás seguro de que quieres eliminar este contenido offline?'
+                : 'Are you sure you want to delete this offline content?',
+            [
+                { text: t('general.cancel'), style: 'cancel' },
+                {
+                    text: language === 'es' ? 'Eliminar' : 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                        const success = await OfflineService.deleteLaw(lawId);
+                        if (success) {
+                            setIsOffline(false);
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
     const handleExplainArticle = async (article) => {
         if (aiRemaining <= 0) {
             Alert.alert(t('ai.limitAlert.title'), t('ai.limitAlert.msg'));
@@ -242,8 +264,14 @@ export default function LawDetailScreen({ navigation, route }) {
 
             {isOffline && (
                 <View style={styles.offlineReady}>
-                    <MaterialCommunityIcons name="check-circle" size={16} color={COLORS.success} />
-                    <Text style={styles.offlineReadyText}>{t('detail.downloaded')}</Text>
+                    <View style={styles.offlineReadyLeft}>
+                        <MaterialCommunityIcons name="check-circle" size={16} color={COLORS.success} />
+                        <Text style={styles.offlineReadyText}>{t('detail.downloaded')}</Text>
+                    </View>
+                    <TouchableOpacity onPress={handleDeleteDownload} style={styles.deleteBtn}>
+                        <MaterialCommunityIcons name="trash-can-outline" size={18} color={COLORS.error} />
+                        <Text style={styles.deleteBtnText}>{language === 'es' ? 'Eliminar' : 'Delete'}</Text>
+                    </TouchableOpacity>
                 </View>
             )}
 
@@ -353,10 +381,13 @@ const styles = StyleSheet.create({
     },
     offlineBannerText: { flex: 1, fontSize: 13, color: COLORS.primary, fontWeight: '600' },
     offlineReady: {
-        flexDirection: 'row', alignItems: 'center', gap: 8,
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
         backgroundColor: '#E8F5E9', padding: 10, paddingHorizontal: 16,
     },
+    offlineReadyLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     offlineReadyText: { fontSize: 12, color: COLORS.success, fontWeight: '600' },
+    deleteBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 8 },
+    deleteBtnText: { fontSize: 12, color: COLORS.error, fontWeight: '600' },
     list: { padding: 16, gap: 12 },
     articleCard: {
         backgroundColor: COLORS.surface, borderRadius: 14, padding: 16,
