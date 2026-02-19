@@ -12,9 +12,9 @@ const FEDERAL_REGISTER_API = 'https://www.federalregister.gov/api/v1';
 
 const IMMIGRATION_AGENCIES = [
     'homeland-security-department',
-    'us-citizenship-and-immigration-services',
-    'us-immigration-and-customs-enforcement',
-    'us-customs-and-border-protection',
+    'u-s-citizenship-and-immigration-services',
+    'u-s-immigration-and-customs-enforcement',
+    'u-s-customs-and-border-protection',
     'executive-office-for-immigration-review',
     'state-department',
 ];
@@ -170,32 +170,39 @@ async function fetchFederalRegisterDocs(daysBack = 7) {
 }
 
 // ─── Check for Existing Documents ───────────────────────────
-async function getExistingDocIds() {
+async function getExistingDocsMap() {
     const { data, error } = await supabase
         .from('laws')
-        .select('id')
+        .select('id, title_es')
         .like('id', 'fr-%');
 
     if (error) {
         console.warn('⚠️ Error fetching existing docs:', error.message);
-        return new Set();
+        return new Map();
     }
 
-    return new Set((data || []).map(d => d.id));
+    const map = new Map();
+    (data || []).forEach(d => map.set(d.id, d));
+    return map;
 }
 
 // ─── Process & Upload ───────────────────────────────────────
 async function processAndUpload(docs) {
-    const existingIds = await getExistingDocIds();
+    const existingDocsMap = await getExistingDocsMap();
     let newCount = 0;
 
     for (const doc of docs) {
         const docId = `fr-${doc.document_number}`;
+        const existingDoc = existingDocsMap.get(docId);
 
-        // Skip if already exists
-        if (existingIds.has(docId)) {
-            console.log(`  ⏭️ Skipping ${docId} (already exists)`);
+        // Skip only if it exists AND has a Spanish title (meaning it was fully processed)
+        if (existingDoc && existingDoc.title_es && existingDoc.title_es !== existingDoc.title) {
+            console.log(`  ⏭️ Skipping ${docId} (already exists and translated)`);
             continue;
+        }
+
+        if (existingDoc) {
+            console.log(`  🔄 Re-processing ${docId} (missing or incomplete translation)...`);
         }
 
         const title = doc.title || 'Untitled Document';
