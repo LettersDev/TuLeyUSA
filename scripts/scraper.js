@@ -38,18 +38,32 @@ const IMMIGRATION_AGENCIES = [
 
 const IMMIGRATION_KEYWORDS = [
     'immigration', 'immigrant', 'visa', 'asylum', 'refugee',
-    'deportation', 'removal', 'naturalization', 'citizenship',
-    'DACA', 'TPS', 'parole', 'inadmissibility', 'green card',
-    'alien', 'noncitizen', 'border', 'USCIS', 'ICE', 'CBP', 'EOIR',
-    'I-94', 'I-130', 'I-485', 'I-765', 'H-1B', 'L-1', 'O-1', 'F-1',
-    'SIJS', 'VAWA', 'INA', 'Adjudication', 'Entry', 'Bond',
+    'deportation', 'removal proceedings', 'naturalization', 'citizenship',
+    'DACA', 'TPS', 'parole', 'inadmissibility', 'green card', 'permanent resident',
+    'noncitizen', 'undocumented', 'USCIS', 'EOIR',
+    'I-130', 'I-485', 'I-765', 'H-1B', 'H-2A', 'H-2B',
+    'L-1', 'O-1', 'F-1', 'K-1', 'U-visa', 'T-visa',
+    'SIJS', 'VAWA', 'adjustment of status', 'work permit',
+    'employment authorization', 'travel document',
+    'immigration court', 'asylum seeker', 'protected status',
+    'deferred action', 'expedited removal', 'voluntary departure',
+    'cancellation of removal', 'withholding of removal',
 ];
 
 const EXCLUDE_KEYWORDS = [
+    // Maritime & Transportation
     'pilotage', 'maritime', 'vessel', 'boat', 'navigation', 'bridge',
     'lighthouse', 'cybersecurity', 'tsa', 'aviation', 'airport',
+    // Disasters & Environment 
     'fema', 'disaster', 'flood', 'radio', 'spectrum', 'telecommunications',
     'dredging', 'waterway', 'oil spill', 'pollution',
+    // Border Infrastructure (NOT immigration law)
+    'barrier', 'barriers', 'fence', 'wall construction', 'road construction',
+    'carretera', 'highway', 'waiver of laws', 'waive certain laws',
+    'construction of roads', 'physical infrastructure',
+    // Military & Other
+    'army corps', 'coast guard', 'fisheries', 'wildlife',
+    'nuclear', 'energy', 'petroleum', 'mining',
 ];
 
 const DOCUMENT_TYPES = ['presidential_document', 'rule', 'proposed_rule', 'notice'];
