@@ -15,16 +15,28 @@ import { formatRelativeDate } from '../utils/helpers';
 import { t } from '../utils/i18n';
 
 export default function HomeScreen({ navigation }) {
-    const { history, hasNewLaws, newAppVersion, language, toggleLanguage } = useApp();
+    const {
+        history, hasNewLaws, newAppVersion,
+        language, toggleLanguage, markUpdatesAsSeen,
+        removeFromHistory
+    } = useApp();
     const recentHistory = history.slice(0, 6);
 
     const handleCategoryPress = (category) => {
+        if (category.id === 'updates') {
+            markUpdatesAsSeen();
+        }
         const label = language === 'es' ? category.label : (category.labelEn || category.label);
         navigation.navigate('LawsList', { categoryId: category.id, categoryLabel: label });
     };
 
     const handleHistoryItem = (item) => {
         navigation.navigate('LawDetail', { lawId: item.id, lawTitle: item.title });
+    };
+
+    const handleDeleteHistory = (e, id) => {
+        // Prevent parent click
+        removeFromHistory(id);
     };
 
     const getCategoryLabel = (category) => {
@@ -39,7 +51,12 @@ export default function HomeScreen({ navigation }) {
             activeOpacity={0.85}
         >
             <LinearGradient colors={category.gradient} style={styles.categoryGradient}>
-                <MaterialCommunityIcons name={category.icon} size={28} color="#FFF" />
+                {category.id === 'updates' && hasNewLaws && (
+                    <View style={styles.redDotCard} />
+                )}
+                <View style={styles.categoryIconContainer}>
+                    <MaterialCommunityIcons name={category.icon} size={28} color="#FFF" />
+                </View>
                 <Text style={styles.categoryLabel}>{getCategoryLabel(category)}</Text>
             </LinearGradient>
         </TouchableOpacity>
@@ -92,18 +109,6 @@ export default function HomeScreen({ navigation }) {
                     </View>
                 )}
 
-                {/* New laws available */}
-                {hasNewLaws && (
-                    <View style={styles.newLawsBanner}>
-                        <MaterialCommunityIcons name="new-box" size={18} color={COLORS.success} />
-                        <Text style={styles.newLawsText}>
-                            {language === 'es'
-                                ? 'Hay nuevas leyes disponibles — abre una categoría para verlas'
-                                : 'New laws are available — open a category to view them'}
-                        </Text>
-                    </View>
-                )}
-
                 {/* Categories */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>{t('home.categories')}</Text>
@@ -115,7 +120,9 @@ export default function HomeScreen({ navigation }) {
                 {/* Recent history */}
                 {recentHistory.length > 0 && (
                     <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>{t('home.recent')}</Text>
+                        <View style={styles.sectionHeaderRow}>
+                            <Text style={styles.sectionTitle}>{t('home.recent')}</Text>
+                        </View>
                         {recentHistory.map((item) => (
                             <TouchableOpacity
                                 key={item.id}
@@ -128,7 +135,12 @@ export default function HomeScreen({ navigation }) {
                                     <Text style={styles.historyTitle} numberOfLines={1}>{item.title}</Text>
                                     <Text style={styles.historyDate}>{formatRelativeDate(item.readAt)}</Text>
                                 </View>
-                                <MaterialCommunityIcons name="chevron-right" size={18} color={COLORS.textLight} />
+                                <TouchableOpacity
+                                    onPress={() => removeFromHistory(item.id)}
+                                    style={styles.deleteButton}
+                                >
+                                    <MaterialCommunityIcons name="close-circle-outline" size={20} color={COLORS.textLight} />
+                                </TouchableOpacity>
                             </TouchableOpacity>
                         ))}
                     </View>
@@ -230,6 +242,7 @@ const styles = StyleSheet.create({
         shadowRadius: 6,
     },
     categoryGradient: {
+        position: 'relative',
         paddingVertical: 20,
         paddingHorizontal: 14,
         alignItems: 'flex-start',
@@ -272,5 +285,30 @@ const styles = StyleSheet.create({
         fontSize: 11,
         color: COLORS.textSecondary,
         lineHeight: 17,
+    },
+    categoryIconContainer: {
+        position: 'relative',
+        marginBottom: 8,
+    },
+    redDotCard: {
+        width: 14,
+        height: 14,
+        borderRadius: 7,
+        backgroundColor: COLORS.error,
+        borderWidth: 2,
+        borderColor: '#FFF',
+        position: 'absolute',
+        top: 10,
+        right: 10,
+        zIndex: 10,
+    },
+    sectionHeaderRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 4,
+    },
+    deleteButton: {
+        padding: 4,
     },
 });

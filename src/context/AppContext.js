@@ -12,13 +12,19 @@ const AppContext = createContext(null);
 export const AppProvider = ({ children, initialHasNewLaws = false, initialNewVersion = null }) => {
     const [favorites, setFavorites] = useState([]);
     const [history, setHistory] = useState([]);
-    const [hasNewLaws, setHasNewLaws] = useState(false);
-    const [newAppVersion, setNewAppVersion] = useState(null);
+    const [hasNewLaws, setHasNewLaws] = useState(initialHasNewLaws);
+    const [newAppVersion, setNewAppVersion] = useState(initialNewVersion);
     const [language, setLanguageState] = useState('en');
 
     useEffect(() => {
         loadInitialData();
     }, []);
+
+    // Sync state if props change (useful during app init/re-init)
+    useEffect(() => {
+        if (initialHasNewLaws) setHasNewLaws(true);
+        if (initialNewVersion) setNewAppVersion(initialNewVersion);
+    }, [initialHasNewLaws, initialNewVersion]);
 
     const loadInitialData = async () => {
         const [favs, hist] = await Promise.all([
@@ -31,6 +37,12 @@ export const AppProvider = ({ children, initialHasNewLaws = false, initialNewVer
         // Load saved language preference
         const savedLang = await loadLanguage();
         setLanguageState(savedLang);
+
+        // Check local has_new_laws flag if not already set by props
+        if (!hasNewLaws) {
+            const localHasNew = await AsyncStorage.getItem('has_new_laws');
+            if (localHasNew === 'true') setHasNewLaws(true);
+        }
     };
 
     const toggleFavorite = async (item) => {
@@ -46,9 +58,19 @@ export const AppProvider = ({ children, initialHasNewLaws = false, initialNewVer
         setHistory(updated);
     };
 
+    const removeFromHistory = async (id) => {
+        const updated = await HistoryService.removeEntry(id);
+        setHistory(updated);
+    };
+
     const clearHistory = async () => {
         await HistoryService.clearAll();
         setHistory([]);
+    };
+
+    const markUpdatesAsSeen = async () => {
+        await AsyncStorage.setItem('has_new_laws', 'false');
+        setHasNewLaws(false);
     };
 
     const setLanguage = async (lang) => {
@@ -68,11 +90,13 @@ export const AppProvider = ({ children, initialHasNewLaws = false, initialNewVer
                 history,
                 hasNewLaws,
                 setHasNewLaws,
+                markUpdatesAsSeen,
                 newAppVersion,
                 setNewAppVersion,
                 toggleFavorite,
                 isFavorite,
                 addToHistory,
+                removeFromHistory,
                 clearHistory,
                 language,
                 setLanguage,

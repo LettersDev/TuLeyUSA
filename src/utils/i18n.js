@@ -167,8 +167,12 @@ const translations = {
         es: 'Artículos',
     },
     'detail.noArticles': {
-        en: 'No articles available',
-        es: 'No hay artículos disponibles',
+        en: 'No articles available offline',
+        es: 'No hay artículos disponibles offline',
+    },
+    'detail.loading': {
+        en: 'Loading...',
+        es: 'Cargando...',
     },
 
     // ── Favorites Screen ────────────────────────────────────
@@ -183,8 +187,8 @@ const translations = {
 
     // ── AI / Gemini ─────────────────────────────────────────
     'ai.loading': {
-        en: 'The AI is thinking...',
-        es: 'La IA está pensando...',
+        en: 'Loading...',
+        es: 'Cargando...',
     },
     'ai.limitReached': {
         en: 'You have reached the daily limit of 10 AI queries. Try again tomorrow.',

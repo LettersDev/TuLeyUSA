@@ -59,7 +59,7 @@ export default function LawDetailScreen({ navigation, route }) {
             await loadItems(-1, true);
             await addToHistory({ id: lawId, title: lawTitle || lawData?.title, category: lawData?.category });
         } catch (error) {
-            console.error('Error loading law:', error);
+            console.warn('[LawDetail] Info: Law not offline/unavailable.', error.message);
         } finally {
             setLoading(false);
         }
@@ -73,12 +73,16 @@ export default function LawDetailScreen({ navigation, route }) {
             } else {
                 setItems((prev) => [...prev, ...newItems]);
             }
-            if (newItems.length > 0) {
+            if (newItems && newItems.length > 0) {
                 setLastIndex(newItems[newItems.length - 1].index);
+                setHasMore(newItems.length === PAGE_SIZE);
+            } else {
+                setHasMore(false);
             }
-            setHasMore(newItems.length === PAGE_SIZE);
         } catch (error) {
-            console.error('Error loading items:', error);
+            // Silencio para evitar alertas rojas en Expo durante uso normal offline
+            console.log('[LawDetail] No internet or items unavailable.');
+            setHasMore(false);
         }
     };
 
@@ -183,7 +187,7 @@ export default function LawDetailScreen({ navigation, route }) {
         return (
             <SafeAreaView style={[styles.container, styles.centered]}>
                 <ActivityIndicator size="large" color={COLORS.primary} />
-                <Text style={styles.loadingText}>{t('ai.loading')}</Text>
+                <Text style={styles.loadingText}>{t('detail.loading')}</Text>
             </SafeAreaView>
         );
     }
@@ -264,8 +268,21 @@ export default function LawDetailScreen({ navigation, route }) {
                 }
                 ListEmptyComponent={
                     <View style={styles.emptyState}>
-                        <MaterialCommunityIcons name="file-document-outline" size={48} color={COLORS.border} />
-                        <Text style={styles.emptyText}>{t('detail.noArticles')}</Text>
+                        <MaterialCommunityIcons
+                            name={isOffline ? "book-open-outline" : "wifi-off"}
+                            size={48}
+                            color={COLORS.border}
+                        />
+                        <Text style={styles.emptyText}>
+                            {!isOffline && items.length === 0
+                                ? (language === 'es' ? 'No se pudo conectar al servidor' : 'Could not connect to server')
+                                : t('detail.noArticles')}
+                        </Text>
+                        {!isOffline && (
+                            <TouchableOpacity style={styles.retryBtn} onPress={loadLaw}>
+                                <Text style={styles.retryText}>{t('general.retry')}</Text>
+                            </TouchableOpacity>
+                        )}
                     </View>
                 }
             />
@@ -358,8 +375,13 @@ const styles = StyleSheet.create({
     explainBtnCount: { fontSize: 10, color: COLORS.textLight },
     loadMoreRow: { flexDirection: 'row', justifyContent: 'center', gap: 8, padding: 16, alignItems: 'center' },
     loadMoreText: { fontSize: 13, color: COLORS.textSecondary },
-    emptyState: { alignItems: 'center', gap: 10, paddingTop: 48 },
-    emptyText: { fontSize: 14, color: COLORS.textSecondary },
+    emptyState: { alignItems: 'center', gap: 10, paddingTop: 48, paddingHorizontal: 20 },
+    emptyText: { fontSize: 14, color: COLORS.textSecondary, textAlign: 'center' },
+    retryBtn: {
+        marginTop: 10, paddingHorizontal: 20, paddingVertical: 8,
+        backgroundColor: COLORS.primary, borderRadius: 8
+    },
+    retryText: { color: '#FFF', fontSize: 14, fontWeight: '600' },
     // Modal
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
     modalContent: {

@@ -45,6 +45,18 @@ const HistoryService = {
         }
     },
 
+    removeEntry: async (id) => {
+        try {
+            let history = await HistoryService.getAll();
+            history = history.filter((h) => h.id !== id);
+            await AsyncStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(history));
+            return history;
+        } catch (error) {
+            console.error('[History] Error removing entry:', error);
+            return [];
+        }
+    },
+
     getRecent: async (limit = 10) => {
         const history = await HistoryService.getAll();
         return history.slice(0, limit);
