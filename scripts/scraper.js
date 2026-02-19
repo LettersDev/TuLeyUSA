@@ -75,13 +75,16 @@ if (!supabaseUrl || !supabaseKey) {
 const supabase = createClient(supabaseUrl, supabaseKey);
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
-const SLEEP_BETWEEN_CALLS = 15000; // 15s to be safe on free tier
+const SLEEP_BETWEEN_CALLS = 25000; // Increased to 25s for lower RPM limits
 
-async function callGemini(prompt, retries = 3) {
+async function callGemini(prompt, retries = 4) {
     if (!GEMINI_API_KEY) return null;
 
     for (let i = 0; i <= retries; i++) {
         try {
+            // Added defensive delay before the very first call
+            if (i === 0) await new Promise(r => setTimeout(r, 5000));
+
             const response = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -96,7 +99,7 @@ async function callGemini(prompt, retries = 3) {
             });
 
             if (response.status === 429) {
-                const wait = (i + 1) * 20000; // Exponential: 20s, 40s, 60s
+                const wait = (i + 1) * 30000; // Exponential: 30s, 60s, 90s, 120s
                 console.warn(`⚠️ Gemini rate limit (429). Waiting ${wait / 1000}s... (Attempt ${i + 1}/${retries + 1})`);
                 await new Promise(r => setTimeout(r, wait));
                 continue;
