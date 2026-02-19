@@ -27,21 +27,26 @@ export const AppProvider = ({ children, initialHasNewLaws = false, initialNewVer
     }, [initialHasNewLaws, initialNewVersion]);
 
     const loadInitialData = async () => {
-        const [favs, hist] = await Promise.all([
-            FavoritesService.getAll(),
-            HistoryService.getAll(),
-        ]);
-        setFavorites(favs);
-        setHistory(hist);
+        try {
+            const [favs, hist] = await Promise.all([
+                FavoritesService.getAll(),
+                HistoryService.getAll(),
+            ]);
+            setFavorites(favs);
+            setHistory(hist);
 
-        // Load saved language preference
-        const savedLang = await loadLanguage();
-        setLanguageState(savedLang);
+            // Load saved language preference
+            const savedLang = await loadLanguage();
+            setLanguageState(savedLang);
 
-        // Check local has_new_laws flag if not already set by props
-        if (!hasNewLaws) {
-            const localHasNew = await AsyncStorage.getItem('has_new_laws');
-            if (localHasNew === 'true') setHasNewLaws(true);
+            // Check local has_new_laws flag if not already set by props
+            if (!hasNewLaws) {
+                const localHasNew = await AsyncStorage.getItem('has_new_laws');
+                if (localHasNew === 'true') setHasNewLaws(true);
+            }
+        } catch (error) {
+            console.error('[AppContext] Error loading initial data:', error);
+            // Gracefully continue with defaults to avoid crashing the app
         }
     };
 

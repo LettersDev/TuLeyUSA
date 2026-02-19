@@ -118,14 +118,24 @@ export default function LawsListScreen({ navigation, route }) {
                 </View>
             ) : laws.length === 0 ? (
                 <View style={styles.emptyState}>
-                    <MaterialCommunityIcons name="file-document-outline" size={64} color={COLORS.border} />
+                    <MaterialCommunityIcons
+                        name={categoryId === 'updates' ? 'newspaper-variant-outline' : 'file-document-outline'}
+                        size={64}
+                        color={COLORS.border}
+                    />
                     <Text style={styles.emptyTitle}>
-                        {language === 'es' ? 'No hay leyes disponibles' : 'No laws available'}
+                        {categoryId === 'updates'
+                            ? (language === 'es' ? 'Sin actualizaciones recientes' : 'No recent updates')
+                            : (language === 'es' ? 'No hay leyes disponibles' : 'No laws available')}
                     </Text>
                     <Text style={styles.emptyText}>
-                        {language === 'es'
-                            ? 'Próximamente agregaremos contenido para esta categoría.'
-                            : 'Content for this category will be added soon.'}
+                        {categoryId === 'updates'
+                            ? (language === 'es'
+                                ? 'El sistema busca nuevas regulaciones de inmigración cada semana. Cuando haya cambios relevantes, aparecerán aquí automáticamente.'
+                                : 'The system checks for new immigration regulations weekly. When relevant changes are found, they will appear here automatically.')
+                            : (language === 'es'
+                                ? 'Próximamente agregaremos contenido para esta categoría.'
+                                : 'Content for this category will be added soon.')}
                     </Text>
                 </View>
             ) : (

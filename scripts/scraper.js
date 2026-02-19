@@ -1,7 +1,7 @@
 // ============================================================
 // scraper.js — TuLey-USA Federal Register Scraper
 // Fetches immigration-related documents from the Federal Register API,
-// translates to Spanish via Gemini, and uploads to Supabase.
+// translates to Spanish via MyMemory API, and uploads to Supabase.
 // Usage: node scraper.js [--dry-run]
 // ============================================================
 
@@ -34,6 +34,7 @@ const IMMIGRATION_AGENCIES = [
     'u-s-customs-and-border-protection',
     'executive-office-for-immigration-review',
     'state-department',
+    'justice-department',
 ];
 
 const IMMIGRATION_KEYWORDS = [
@@ -80,7 +81,6 @@ const DRY_RUN = process.argv.includes('--dry-run');
 // ─── Supabase Client ────────────────────────────────────────
 const supabaseUrl = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.EXPO_PUBLIC_GEMINI_API_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
     console.error('❌ Missing SUPABASE_URL or SUPABASE_SERVICE_KEY (or EXPO_PUBLIC_* fallbacks)');
