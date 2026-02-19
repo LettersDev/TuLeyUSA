@@ -118,6 +118,14 @@ const translations = {
         en: 'Family petitions and reunification',
         es: 'Peticiones familiares y reunificación',
     },
+    'cat.updates': {
+        en: 'Updates',
+        es: 'Actualizaciones',
+    },
+    'cat.updates.desc': {
+        en: 'Latest immigration news and changes',
+        es: 'Últimas noticias y cambios migratorios',
+    },
 
     // ── Search Screen ───────────────────────────────────────
     'search.placeholder': {

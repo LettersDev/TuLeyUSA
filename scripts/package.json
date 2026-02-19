@@ -1,0 +1,14 @@
+{
+    "name": "tuley-usa-scraper",
+    "version": "1.0.0",
+    "description": "Federal Register immigration law scraper for TuLey-USA",
+    "main": "scraper.js",
+    "type": "module",
+    "scripts": {
+        "scrape": "node scraper.js",
+        "test": "node scraper.js --dry-run"
+    },
+    "dependencies": {
+        "@supabase/supabase-js": "^2.39.0"
+    }
+}

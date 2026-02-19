@@ -106,6 +106,15 @@ export const CATEGORIES = [
         gradient: ['#2E7D32', '#388E3C'],
         description: 'Peticiones familiares y reunificación',
     },
+    {
+        id: 'updates',
+        label: 'Actualizaciones',
+        labelEn: 'Updates',
+        icon: 'newspaper-variant-outline',
+        color: '#00838F',
+        gradient: ['#00838F', '#0097A7'],
+        description: 'Últimas noticias y cambios migratorios',
+    },
 ];
 
 export const STORAGE_KEYS = {
