@@ -73,98 +73,112 @@ if (!supabaseUrl || !supabaseKey) {
     process.exit(1);
 }
 const supabase = createClient(supabaseUrl, supabaseKey);
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
-const SLEEP_BETWEEN_CALLS = 25000; // Increased to 25s for lower RPM limits
+// ─── Free Translation (MyMemory API) ────────────────────────
+// No API key needed, no rate limits. 5000 chars/day anonymous, unlimited with email.
+const MYMEMORY_URL = 'https://api.mymemory.translated.net/get';
 
-async function callGemini(prompt, retries = 4) {
-    if (!GEMINI_API_KEY) return null;
+async function translateToSpanish(text, retries = 2) {
+    if (!text || text.length < 3) return text;
+
+    // MyMemory has a 500-char limit per request, so we truncate if needed
+    const truncated = text.substring(0, 490);
 
     for (let i = 0; i <= retries; i++) {
         try {
-            // Added defensive delay before the very first call
-            if (i === 0) await new Promise(r => setTimeout(r, 5000));
-
-            const response = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: {
-                        temperature: 0.1,
-                        maxOutputTokens: 2500,
-                        responseMimeType: 'application/json',
-                    },
-                }),
+            const params = new URLSearchParams({
+                q: truncated,
+                langpair: 'en|es',
             });
 
-            if (response.status === 429) {
-                const wait = (i + 1) * 30000; // Exponential: 30s, 60s, 90s, 120s
-                console.warn(`⚠️ Gemini rate limit (429). Waiting ${wait / 1000}s... (Attempt ${i + 1}/${retries + 1})`);
-                await new Promise(r => setTimeout(r, wait));
+            const response = await fetch(`${MYMEMORY_URL}?${params}`);
+
+            if (!response.ok) {
+                console.warn(`  ⚠️ MyMemory failed (${response.status}). Retrying...`);
+                await new Promise(r => setTimeout(r, 2000));
                 continue;
             }
 
-            if (!response.ok) {
-                console.warn(`⚠️ Gemini call failed (${response.status})`);
-                return null;
+            const data = await response.json();
+            const translated = data?.responseData?.translatedText;
+
+            if (!translated || translated.includes('MYMEMORY WARNING')) {
+                console.warn('  ⚠️ MyMemory returned a warning. Using original text.');
+                return text;
             }
 
-            const data = await response.json();
-            return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
+            return translated;
         } catch (error) {
-            console.warn('⚠️ Gemini error:', error.message);
+            console.warn('  ⚠️ Translation error:', error.message);
             if (i < retries) {
-                await new Promise(r => setTimeout(r, 10000));
+                await new Promise(r => setTimeout(r, 2000));
                 continue;
             }
         }
     }
-    return null;
+    return text; // Fallback to original English text
+}
+
+// ─── Local Law Matching (No AI needed) ──────────────────────
+/**
+ * Matches a document to an existing law using keyword overlap.
+ * Returns the law ID if a strong match is found, null otherwise.
+ */
+function matchDocumentToLaw(doc, laws) {
+    const docText = `${doc.title} ${doc.abstract || ''}`.toLowerCase();
+
+    let bestMatch = null;
+    let bestScore = 0;
+
+    for (const law of laws) {
+        const lawWords = law.title.toLowerCase()
+            .split(/\s+/)
+            .filter(w => w.length > 3); // Only meaningful words
+
+        let matchCount = 0;
+        for (const word of lawWords) {
+            if (docText.includes(word)) matchCount++;
+        }
+
+        // Score = percentage of law title words found in the document
+        const score = lawWords.length > 0 ? matchCount / lawWords.length : 0;
+
+        if (score > bestScore && score >= 0.4) { // At least 40% word overlap
+            bestScore = score;
+            bestMatch = law.id;
+        }
+    }
+
+    return bestMatch;
 }
 
 /**
- * Combines law matching and translation into a single Gemini call.
+ * Processes documents: translates with MyMemory + matches locally.
  */
-async function processDocumentWithAI(doc, laws) {
-    if (!GEMINI_API_KEY) {
-        return { matchedLawId: 'NONE', titleEs: doc.title, abstractEs: doc.abstract };
+async function processDocuments(docs, laws) {
+    const results = [];
+
+    for (const doc of docs) {
+        console.log(`  🌐 Translating: ${doc.title.substring(0, 60)}...`);
+
+        const titleEs = await translateToSpanish(doc.title);
+        // Small delay between translation calls to be respectful
+        await new Promise(r => setTimeout(r, 1500));
+
+        const abstractEs = await translateToSpanish(doc.abstract || doc.title);
+        await new Promise(r => setTimeout(r, 1500));
+
+        const matchedLawId = matchDocumentToLaw(doc, laws);
+
+        results.push({
+            document_number: doc.document_number,
+            matchedLawId: matchedLawId || 'NONE',
+            titleEs,
+            abstractEs,
+        });
     }
 
-    const lawsListString = laws.map(l => `- ID: ${l.id}, Title: ${l.title}`).join('\n');
-
-    const prompt = `You are a legal assistant for TuLey-USA. 
-Process this US immigration update and return a JSON object.
-
-Update Title: ${doc.title}
-Update Abstract: ${doc.abstract || doc.title}
-
-Tasks:
-1. matchedLawId: Does this update provide a significant amendment to any of these existing laws? 
-   Existing Topics:
-   ${lawsListString}
-   Return the Law ID if it's a CLEAR MATCH, otherwise "NONE".
-
-2. titleEs: Translate the document title to Spanish accurately for a legal mobile app.
-3. abstractEs: Translate the document abstract to Spanish.
-
-Return ONLY a JSON object:
-{
-  "matchedLawId": "ID or NONE",
-  "titleEs": "Spanish Title",
-  "abstractEs": "Spanish Abstract"
-}`;
-
-    const result = await callGemini(prompt);
-    if (!result) return null;
-
-    try {
-        const jsonStr = result.replace(/```json|```/g, '').trim();
-        return JSON.parse(jsonStr);
-    } catch (e) {
-        console.warn('⚠️ Failed to parse Gemini JSON:', e.message);
-        return null;
-    }
+    return results;
 }
 
 // ─── Federal Register API ───────────────────────────────────
@@ -281,61 +295,65 @@ async function getConsolidatedLaws() {
 async function processAndUpload(docs) {
     const existingDocsMap = await getExistingDocsMap();
     const consolidatedLaws = await getConsolidatedLaws();
-    let newCount = 0;
 
-    for (const doc of docs) {
+    // 1. Filter docs that truly need processing
+    const docsToProcess = docs.filter(doc => {
         const docId = `fr-${doc.document_number}`;
         const existingDoc = existingDocsMap.get(docId);
 
-        // Skip only if it exists AND has a Spanish title that is actually different from English
         if (existingDoc && existingDoc.title_es &&
             existingDoc.title_es !== existingDoc.title &&
             !existingDoc.title_es.includes('[English Only]')) {
-            console.log(`  ⏭️ Skipping ${docId} (already exists and translated)`);
-            continue;
+            return false;
         }
+        return true;
+    });
 
+    if (docsToProcess.length === 0) {
+        console.log('✅ All fetched documents are already processed and translated.');
+        return 0;
+    }
+
+    console.log(`\n📦 Processing ${docsToProcess.length} documents (MyMemory + Local Matching)...`);
+
+    // 2. Translate and match all documents
+    const results = await processDocuments(docsToProcess, consolidatedLaws);
+    let newCount = 0;
+
+    // 3. Upload each result to Supabase
+    for (const result of results) {
+        const doc = docsToProcess.find(d => d.document_number === result.document_number);
+        if (!doc) continue;
+
+        const docId = `fr-${doc.document_number}`;
         const title = doc.title || 'Untitled Document';
-        const abstract = doc.abstract || doc.title || '';
         const typeLabel = TYPE_LABELS[doc.type] || doc.type || 'Document';
         const pubDate = doc.publication_date || new Date().toISOString().split('T')[0];
+        const abstract = doc.abstract || doc.title || '';
 
-        console.log(`\n📄 Processing: ${title.substring(0, 80)}...`);
-
-        if (DRY_RUN) {
-            console.log(`  🔍 [DRY RUN] Would process: ${docId}`);
-            newCount++;
-            continue;
-        }
-
-        // --- COMBINED AI CALL (Match + Translate) ---
-        console.log(`  🧠 AI: Matching & Translating...`);
-        const aiResult = await processDocumentWithAI(doc, consolidatedLaws);
-
-        if (!aiResult || !aiResult.titleEs) {
-            console.warn(`  ⚠️ AI processing failed for ${docId}. Skipping to avoid poor content.`);
-            continue;
-        }
-
-        const matchedLawId = aiResult.matchedLawId !== 'NONE' ? aiResult.matchedLawId : null;
-        const titleEs = aiResult.titleEs;
-        const abstractEs = aiResult.abstractEs;
+        const matchedLawId = result.matchedLawId !== 'NONE' ? result.matchedLawId : null;
+        const titleEs = result.titleEs;
+        const abstractEs = result.abstractEs;
 
         let targetLawId = docId;
         let isAmendment = false;
 
         if (matchedLawId) {
-            console.log(`  🎯 MATCHED existing law: ${matchedLawId}`);
+            console.log(`  🎯 MATCHED: ${docId} -> ${matchedLawId}`);
             targetLawId = matchedLawId;
             isAmendment = true;
+        } else {
+            console.log(`  🆕 NEW LAW: ${docId}`);
         }
 
-        // Wait between documents to respect the global rate limit (15s)
-        console.log(`  ⏳ Waiting ${SLEEP_BETWEEN_CALLS / 1000}s for Gemini quota...`);
-        await new Promise(r => setTimeout(r, SLEEP_BETWEEN_CALLS));
+        if (DRY_RUN) {
+            console.log(`  🔍 [DRY RUN] Would upload: ${docId}`);
+            console.log(`    Title ES: ${titleEs}`);
+            newCount++;
+            continue;
+        }
 
         if (!isAmendment) {
-            // Insert as a new law in 'updates' category
             const { error: lawError } = await supabase
                 .from('laws')
                 .upsert({
@@ -351,22 +369,18 @@ async function processAndUpload(docs) {
                 }, { onConflict: 'id' });
 
             if (lawError) {
-                console.error(`  ❌ Error inserting law: ${lawError.message}`);
+                console.error(`  ❌ Error inserting law ${docId}: ${lawError.message}`);
                 continue;
             }
         }
 
-        // Build article text
         const articleText = `${abstract}\n\nPublished: ${pubDate}\nDocument Number: ${doc.document_number}\nSource: ${doc.html_url || 'Federal Register'}`;
         const articleTextEs = abstractEs
             ? `${abstractEs}\n\nPublicado: ${pubDate}\nNúmero de Documento: ${doc.document_number}\nFuente: ${doc.html_url || 'Federal Register'}`
             : null;
 
-        // Insert law item
-        // If it's an amendment, we use a different ID scheme or just let it append
         const itemId = isAmendment ? `${targetLawId}-up-${doc.document_number}` : `${targetLawId}-1`;
 
-        // For amendments, we want to know the last index to append correctly
         let nextIndex = 0;
         if (isAmendment) {
             const { data: items } = await supabase
@@ -384,7 +398,7 @@ async function processAndUpload(docs) {
                 id: itemId,
                 law_id: targetLawId,
                 index: nextIndex,
-                number: isAmendment ? null : 1, // Amendments don't usually have a sequence number in the same way
+                number: isAmendment ? null : 1,
                 title: isAmendment ? `UPDATE: ${pubDate}` : typeLabel,
                 title_es: isAmendment ? `ACTUALIZACIÓN: ${pubDate}` : typeLabel,
                 text: articleText,
@@ -392,11 +406,10 @@ async function processAndUpload(docs) {
             }, { onConflict: 'id' });
 
         if (itemError) {
-            console.error(`  ❌ Error inserting item: ${itemError.message}`);
+            console.error(`  ❌ Error inserting item ${itemId}: ${itemError.message}`);
             continue;
         }
 
-        // If it's an amendment, update the article count and date of the parent law
         if (isAmendment) {
             await supabase.rpc('increment_article_count', { law_id_param: targetLawId });
             await supabase
@@ -405,16 +418,12 @@ async function processAndUpload(docs) {
                 .eq('id', targetLawId);
         }
 
-        if (abstractEs) {
-            console.log(`  ✅ Successfully ${isAmendment ? 'MERGED' : 'UPLOADED'}: ${docId}`);
-        } else {
-            console.log(`  ⚠️ Uploaded ${docId} WITHOUT full translation.`);
-        }
         newCount++;
     }
 
     return newCount;
 }
+
 
 // ─── Update System Metadata ─────────────────────────────────
 async function updateMetadata(count) {
